@@ -1,5 +1,6 @@
 import { sandbox } from './sandboxClient.js';
 import { z } from 'zod';
+import axios from 'axios';
 import razorpay from './razorpay.js';
 
 export const initiatePayment = async (req, res, next) => {
@@ -71,6 +72,102 @@ export const initiateSession = async (req, res) => {
     res.json({ success: true, data });
   } catch (err) {
     const status = err?.response?.status || 400;
+    res.status(status).json({
+      success: false,
+      error: err?.response?.data || err.message
+    });
+  }
+};
+
+export const sendWhatsAppMessage = async (req, res) => {
+  try {
+    if (!req.body || Object.keys(req.body).length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Request body is required'
+      });
+    }
+
+    const requestData = req.body;
+
+    const url =
+      process.env.MSG91_WHATSAPP_URL ||
+      'https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk/';
+
+    const authKey = process.env.MSG91_AUTH_KEY;
+    if (!authKey) {
+      return res.status(500).json({
+        success: false,
+        error: 'MSG91_AUTH_KEY is not configured'
+      });
+    }
+
+    const headers = {
+      'Content-Type': 'application/json',
+      authkey: authKey
+    };
+
+    // const cookie = process.env.MSG91_COOKIE;
+    // if (cookie) {
+    //   headers.Cookie = cookie;
+    // }
+
+    const response = await axios.post(url, requestData, {
+      headers,
+      maxBodyLength: Infinity
+    });
+
+    res.json({ success: true, data: response.data });
+  } catch (err) {
+    const status = err?.response?.status || 500;
+    res.status(status).json({
+      success: false,
+      error: err?.response?.data || err.message
+    });
+  }
+};
+
+export const sendStockRecommendationMessage = async (req, res) => {
+  try {
+    if (!req.body || Object.keys(req.body).length === 0) {
+      return res.status(400).json({
+        success: false,
+        error: 'Request body is required'
+      });
+    }
+
+    const requestData = req.body;
+
+    const url =
+      process.env.MSG91_WHATSAPP_URL ||
+      'https://api.msg91.com/api/v5/whatsapp/whatsapp-outbound-message/bulk/';
+
+    const authKey = process.env.MSG91_AUTH_KEY;
+    if (!authKey) {
+      return res.status(500).json({
+        success: false,
+        error: 'MSG91_AUTH_KEY is not configured'
+      });
+    }
+
+    const headers = {
+      'Content-Type': 'application/json',
+      authkey: authKey
+    };
+
+    // const cookie = process.env.MSG91_COOKIE;
+    // if (cookie) {
+    //   headers.Cookie = cookie;
+    // }
+
+    const response = await axios.post(url, requestData, {
+      headers,
+      maxBodyLength: Infinity
+    });
+
+    res.json({ success: true, data: response.data });
+  } catch (err) {
+    const status = err?.response?.status || 500;
     res.status(status).json({
       success: false,
       error: err?.response?.data || err.message
