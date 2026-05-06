@@ -41,6 +41,7 @@ if (!admin.apps.length) {
 
 // Get Storage bucket
 const bucket = admin.storage().bucket();
+const db = admin.firestore();
 
-export { admin, bucket };
+export { admin, bucket, db };
 
