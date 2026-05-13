@@ -57,6 +57,16 @@ export function createSignSecureClient(opts) {
   }
 
   /**
+   * Request the presigned download URL for a completed envelope file.
+   */
+  async function getEnvelopeDownloadUrl(envelopeId) {
+    return axios.get(`${baseUrl}/api/v1/envelopes/${encodeURIComponent(envelopeId)}/file`, {
+      headers: authHeaders(),
+      validateStatus: () => true,
+    });
+  }
+
+  /**
    * Fallback paths used by some e-sign APIs if GET envelope does not embed a URL.
    */
   async function tryDownloadSignedPdf(envelopeId) {
@@ -86,6 +96,7 @@ export function createSignSecureClient(opts) {
     uploadToPresignedPost,
     sendEnvelope,
     getEnvelope,
+    getEnvelopeDownloadUrl,
     tryDownloadSignedPdf,
   };
 }
@@ -158,6 +169,44 @@ export function extractSignedDocumentUrl(envelopeJson) {
     }
   }
   return null;
+}
+
+/**
+ * Extract the presigned download URL payload returned by Sign Secure's
+ * /envelopes/{envelopeId}/file endpoint.
+ */
+export function extractEnvelopeDownloadInfo(responseJson) {
+  const data = responseJson?.data !== undefined ? responseJson.data : responseJson;
+  if (!data || typeof data !== 'object') return null;
+
+  const url =
+    (typeof data.url === 'string' && data.url) ||
+    (typeof data.downloadUrl === 'string' && data.downloadUrl) ||
+    (typeof data.signedDocumentUrl === 'string' && data.signedDocumentUrl) ||
+    (data.data && typeof data.data === 'object' && typeof data.data.url === 'string' && data.data.url) ||
+    null;
+
+  if (!url) return null;
+
+  return {
+    url,
+    expiresIn:
+      typeof data.expiresIn === 'number'
+        ? data.expiresIn
+        : typeof data.expires_in === 'number'
+          ? data.expires_in
+          : typeof data.data?.expiresIn === 'number'
+            ? data.data.expiresIn
+            : null,
+    fileName:
+      typeof data.fileName === 'string'
+        ? data.fileName
+        : typeof data.filename === 'string'
+          ? data.filename
+          : typeof data.data?.fileName === 'string'
+            ? data.data.fileName
+            : null,
+  };
 }
 
 export function getEnvelopeStatus(envelopeJson) {

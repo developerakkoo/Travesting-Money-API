@@ -61,6 +61,8 @@ If any step fails, fix env/token/placement before testing your app integration.
 
 **Finalize (polling / manual refresh):** `POST /api/agreements/sign/complete/{envelopeId}` with JSON body `{}`. Returns **202** `{ pending: true }` until Sign Secure marks the envelope complete; **200** with `data.viewUrl` when the signed PDF was downloaded and stored under `uploads/agreements/`. The Angular app polls this while the user may still be on Sign Secure.
 
+**Direct Sign Secure download URL:** `GET /api/agreements/sign/download/{envelopeId}`. Returns the presigned URL from Sign Secure's `/envelopes/{envelopeId}/file` endpoint, plus `expiresIn` and `fileName` when available. Use this if your frontend needs the temporary SignSecure-hosted link instead of the locally stored `/uploads/agreements/...` file.
+
 **Webhook (optional):** `POST /api/agreements/sign/webhook` — JSON body must include `envelopeId` (or `id`). Set `SIGNSECURE_WEBHOOK_SECRET` and send the same value in header `x-webhook-secret` if configured.
 
 ---

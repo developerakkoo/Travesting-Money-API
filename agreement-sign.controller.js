@@ -1,6 +1,7 @@
 import {
   createSignSecureClient,
   buildCreateEnvelopePayload,
+  extractEnvelopeDownloadInfo,
 } from './signsecure.client.js';
 import {
   getSignSecureEnvConfig,
@@ -151,6 +152,54 @@ export async function completeEnvelope(req, res, next) {
     });
   } catch (error) {
     console.error('completeEnvelope:', error);
+    next(error);
+  }
+}
+
+export async function getSignSecureDownloadUrl(req, res, next) {
+  try {
+    const cfg = getSignSecureEnvConfig();
+    if (!cfg.useSignSecure) {
+      return res.status(503).json({ success: false, error: 'Sign Secure is disabled' });
+    }
+    if (!cfg.token || !cfg.baseUrl) {
+      return res.status(503).json({ success: false, error: 'Sign Secure is not configured' });
+    }
+
+    const envelopeId = req.params.envelopeId?.trim();
+    if (!envelopeId) {
+      return res.status(400).json({ success: false, error: 'envelopeId required' });
+    }
+
+    const client = createSignSecureClient({ baseUrl: cfg.baseUrl, token: cfg.token });
+    const downloadRes = await client.getEnvelopeDownloadUrl(envelopeId);
+
+    if (downloadRes.status !== 200) {
+      return res.status(downloadRes.status >= 400 && downloadRes.status < 600 ? downloadRes.status : 502).json({
+        success: false,
+        error: downloadRes.data?.message || downloadRes.data?.error || 'Download URL lookup failed',
+        details: downloadRes.data,
+      });
+    }
+
+    const info = extractEnvelopeDownloadInfo(downloadRes.data);
+    if (!info?.url) {
+      return res.status(502).json({
+        success: false,
+        error: 'Sign Secure did not return a download URL',
+        details: downloadRes.data,
+      });
+    }
+
+    return res.status(200).json({
+      success: true,
+      data: {
+        envelopeId,
+        ...info,
+      },
+    });
+  } catch (error) {
+    console.error('getSignSecureDownloadUrl:', error);
     next(error);
   }
 }
