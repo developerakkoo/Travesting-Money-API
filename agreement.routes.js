@@ -5,6 +5,7 @@ import {
   signAndSendAgreement,
   completeEnvelope,
   getSignSecureDownloadUrl,
+  downloadSignSecureAgreementFile,
   signSecureWebhook,
 } from './agreement-sign.controller.js';
 import { uploadAgreementPdfMemory } from './agreement-sign.middleware.js';
@@ -15,6 +16,7 @@ const router = Router();
 router.post('/sign/send', uploadAgreementPdfMemory, signAndSendAgreement);
 router.post('/sign/complete/:envelopeId', completeEnvelope);
 router.get('/sign/download/:envelopeId', getSignSecureDownloadUrl);
+router.get('/sign/file/:envelopeId', downloadSignSecureAgreementFile);
 router.post('/sign/webhook', signSecureWebhook);
 
 // Upload agreement PDF (legacy disk upload when not using Sign Secure)

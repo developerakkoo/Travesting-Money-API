@@ -63,6 +63,8 @@ If any step fails, fix env/token/placement before testing your app integration.
 
 **Direct Sign Secure download URL:** `GET /api/agreements/sign/download/{envelopeId}`. Returns the presigned URL from Sign Secure's `/envelopes/{envelopeId}/file` endpoint, plus `expiresIn` and `fileName` when available. Use this if your frontend needs the temporary SignSecure-hosted link instead of the locally stored `/uploads/agreements/...` file.
 
+**Proxy signed PDF download:** `GET /api/agreements/sign/file/{envelopeId}`. Streams the signed document through this API so the frontend can download the PDF directly without calling SignSecure itself.
+
 **Webhook (optional):** `POST /api/agreements/sign/webhook` — JSON body must include `envelopeId` (or `id`). Set `SIGNSECURE_WEBHOOK_SECRET` and send the same value in header `x-webhook-secret` if configured.
 
 ---

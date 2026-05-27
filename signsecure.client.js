@@ -67,6 +67,24 @@ export function createSignSecureClient(opts) {
   }
 
   /**
+   * Download the signed envelope file response from Sign Secure.
+   * Some environments return the PDF bytes directly, while others return a JSON
+   * payload containing a temporary download URL.
+   */
+  async function downloadEnvelopeFile(envelopeId) {
+    return axios.get(`${baseUrl}/api/v1/envelopes/${encodeURIComponent(envelopeId)}/file`, {
+      headers: {
+        ...authHeaders(),
+        Accept: 'application/pdf,application/json;q=0.9,*/*;q=0.8',
+      },
+      responseType: 'stream',
+      validateStatus: () => true,
+      maxRedirects: 5,
+      timeout: 120000,
+    });
+  }
+
+  /**
    * Fallback paths used by some e-sign APIs if GET envelope does not embed a URL.
    */
   async function tryDownloadSignedPdf(envelopeId) {
@@ -97,6 +115,7 @@ export function createSignSecureClient(opts) {
     sendEnvelope,
     getEnvelope,
     getEnvelopeDownloadUrl,
+    downloadEnvelopeFile,
     tryDownloadSignedPdf,
   };
 }

@@ -1,3 +1,4 @@
+import axios from 'axios';
 import {
   createSignSecureClient,
   buildCreateEnvelopePayload,
@@ -8,6 +9,106 @@ import {
   saveEnvelopeJob,
   finalizeEnvelopeIfReady,
 } from './signsecure-finalize.service.js';
+
+function isJsonLikeContentType(contentType = '') {
+  return /application\/json|text\/json|[\w.+-]+\/[\w.+-]+json/i.test(contentType);
+}
+
+function isTextLikeContentType(contentType = '') {
+  return /^text\//i.test(contentType) || /application\/xml|application\/x-www-form-urlencoded/i.test(contentType);
+}
+
+async function readStreamToString(stream) {
+  if (!stream) return '';
+  let output = '';
+  for await (const chunk of stream) {
+    output += Buffer.isBuffer(chunk) ? chunk.toString('utf8') : String(chunk);
+  }
+  return output;
+}
+
+function getFallbackDownloadFileName(envelopeId, info) {
+  const rawName =
+    info?.fileName
+    || info?.filename
+    || `agreement-${envelopeId}.pdf`;
+  return String(rawName).replace(/[\\/:*?"<>|]/g, '_');
+}
+
+async function proxySignSecureFileResponse(res, upstreamRes, envelopeId, info = null) {
+  const contentType = String(upstreamRes.headers?.['content-type'] || '');
+
+  if (isJsonLikeContentType(contentType) || isTextLikeContentType(contentType)) {
+    const payloadText = await readStreamToString(upstreamRes.data);
+    let parsed = null;
+
+    if (payloadText) {
+      try {
+        parsed = JSON.parse(payloadText);
+      } catch {
+        parsed = null;
+      }
+    }
+
+    const downloadInfo = extractEnvelopeDownloadInfo(parsed || payloadText) || info;
+    const downloadUrl = downloadInfo?.url || null;
+
+    if (downloadUrl) {
+      const fileRes = await axios.get(downloadUrl, {
+        responseType: 'stream',
+        validateStatus: () => true,
+        maxRedirects: 5,
+        timeout: 120000,
+      });
+
+      if (fileRes.status !== 200) {
+        const errText = await readStreamToString(fileRes.data);
+        return res.status(fileRes.status >= 400 && fileRes.status < 600 ? fileRes.status : 502).json({
+          success: false,
+          error: 'Failed to download signed document from temporary URL',
+          details: errText || null,
+        });
+      }
+
+      const fallbackName = getFallbackDownloadFileName(envelopeId, downloadInfo);
+      res.status(200);
+      res.setHeader('Content-Type', fileRes.headers?.['content-type'] || 'application/pdf');
+      res.setHeader(
+        'Content-Disposition',
+        fileRes.headers?.['content-disposition'] || `attachment; filename="${fallbackName}"`,
+      );
+      if (fileRes.headers?.['content-length']) {
+        res.setHeader('Content-Length', fileRes.headers['content-length']);
+      }
+      if (fileRes.headers?.['cache-control']) {
+        res.setHeader('Cache-Control', fileRes.headers['cache-control']);
+      }
+      return fileRes.data.pipe(res);
+    }
+
+    return res.status(502).json({
+      success: false,
+      error: 'Sign Secure did not return a downloadable file',
+      details: parsed || payloadText || null,
+    });
+  }
+
+  const fallbackName = getFallbackDownloadFileName(envelopeId, info);
+  res.status(200);
+  res.setHeader('Content-Type', contentType || 'application/pdf');
+  res.setHeader(
+    'Content-Disposition',
+    upstreamRes.headers?.['content-disposition'] || `attachment; filename="${fallbackName}"`,
+  );
+  if (upstreamRes.headers?.['content-length']) {
+    res.setHeader('Content-Length', upstreamRes.headers['content-length']);
+  }
+  if (upstreamRes.headers?.['cache-control']) {
+    res.setHeader('Cache-Control', upstreamRes.headers['cache-control']);
+  }
+
+  return upstreamRes.data.pipe(res);
+}
 
 export async function signAndSendAgreement(req, res, next) {
   try {
@@ -200,6 +301,40 @@ export async function getSignSecureDownloadUrl(req, res, next) {
     });
   } catch (error) {
     console.error('getSignSecureDownloadUrl:', error);
+    next(error);
+  }
+}
+
+export async function downloadSignSecureAgreementFile(req, res, next) {
+  try {
+    const cfg = getSignSecureEnvConfig();
+    if (!cfg.useSignSecure) {
+      return res.status(503).json({ success: false, error: 'Sign Secure is disabled' });
+    }
+    if (!cfg.token || !cfg.baseUrl) {
+      return res.status(503).json({ success: false, error: 'Sign Secure is not configured' });
+    }
+
+    const envelopeId = req.params.envelopeId?.trim();
+    if (!envelopeId) {
+      return res.status(400).json({ success: false, error: 'envelopeId required' });
+    }
+
+    const client = createSignSecureClient({ baseUrl: cfg.baseUrl, token: cfg.token });
+    const downloadRes = await client.downloadEnvelopeFile(envelopeId);
+
+    if (downloadRes.status !== 200) {
+      const errText = await readStreamToString(downloadRes.data);
+      return res.status(downloadRes.status >= 400 && downloadRes.status < 600 ? downloadRes.status : 502).json({
+        success: false,
+        error: errText || downloadRes.data?.message || downloadRes.data?.error || 'Download failed',
+        details: errText || null,
+      });
+    }
+
+    return proxySignSecureFileResponse(res, downloadRes, envelopeId);
+  } catch (error) {
+    console.error('downloadSignSecureAgreementFile:', error);
     next(error);
   }
 }
