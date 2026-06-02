@@ -10,6 +10,18 @@ import {
   finalizeEnvelopeIfReady,
 } from './signsecure-finalize.service.js';
 
+export function verifyAdminApiKey(req, res, next) {
+  const expected = process.env.ADMIN_API_KEY;
+  if (!expected) {
+    return next();
+  }
+  const key = req.headers['x-admin-api-key'] || req.query.adminKey;
+  if (key !== expected) {
+    return res.status(401).json({ success: false, error: 'Unauthorized' });
+  }
+  return next();
+}
+
 function isJsonLikeContentType(contentType = '') {
   return /application\/json|text\/json|[\w.+-]+\/[\w.+-]+json/i.test(contentType);
 }
@@ -132,6 +144,8 @@ export async function signAndSendAgreement(req, res, next) {
     const signerEmail = String(req.body.signerEmail ?? '').trim();
     const signerName = String(req.body.signerName ?? '').trim();
     const title = String(req.body.title ?? '').trim() || 'Service agreement';
+    const redirectUrlBody = String(req.body.redirectUrl ?? '').trim();
+    const redirectUrl = redirectUrlBody || cfg.redirectUrl;
 
     if (!userId || !serviceId || !signerEmail || !signerName) {
       return res.status(400).json({
@@ -152,7 +166,7 @@ export async function signAndSendAgreement(req, res, next) {
       title,
       signerEmail,
       signerName,
-      redirectUrl: cfg.redirectUrl,
+      redirectUrl: redirectUrl,
       anchorText: cfg.anchorText,
     });
 
@@ -388,3 +402,4 @@ export async function signSecureWebhook(req, res, next) {
     next(error);
   }
 }
+

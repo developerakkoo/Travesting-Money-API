@@ -19,6 +19,7 @@ export function getSignSecureEnvConfig() {
       process.env.SIGNSECURE_REDIRECT_URL || 'https://travesting-user.web.app/services',
     anchorText: process.env.SIGNSECURE_SIGN_ANCHOR_TEXT || 'Client Signature:',
     useSignSecure: process.env.USE_SIGNSECURE !== 'false',
+    adminApiKey: process.env.ADMIN_API_KEY || '',
   };
 }
 
@@ -72,16 +73,23 @@ export async function finalizeEnvelopeIfReady(envelopeId) {
 
   let pdfBuffer = null;
 
-  const url = extractSignedDocumentUrl(envelopePayload);
-  if (url) {
-    const dl = await axios.get(url, {
-      responseType: 'arraybuffer',
-      validateStatus: () => true,
-      timeout: 120000,
-      maxRedirects: 5,
-    });
-    if (dl.status === 200 && dl.data) {
-      pdfBuffer = Buffer.from(dl.data);
+  const fileRes = await client.downloadEnvelopeFile(envelopeId);
+  if (fileRes.status === 200 && fileRes.data && fileRes.data.byteLength > 100) {
+    pdfBuffer = Buffer.from(fileRes.data);
+  }
+
+  if (!pdfBuffer || pdfBuffer.length < 100) {
+    const url = extractSignedDocumentUrl(envelopePayload);
+    if (url) {
+      const dl = await axios.get(url, {
+        responseType: 'arraybuffer',
+        validateStatus: () => true,
+        timeout: 120000,
+        maxRedirects: 5,
+      });
+      if (dl.status === 200 && dl.data) {
+        pdfBuffer = Buffer.from(dl.data);
+      }
     }
   }
 
