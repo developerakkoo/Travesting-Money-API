@@ -47,7 +47,27 @@ function getFallbackDownloadFileName(envelopeId, info) {
   return String(rawName).replace(/[\\/:*?"<>|]/g, '_');
 }
 
-async function proxySignSecureFileResponse(res, upstreamRes, envelopeId, info = null) {
+function getRequestedDisposition(req) {
+  const value = String(req.query?.disposition || '').trim().toLowerCase();
+  return value === 'inline' ? 'inline' : 'attachment';
+}
+
+function applyPdfHeaders(res, headers, fileName, disposition) {
+  res.status(200);
+  res.setHeader('Content-Type', headers?.['content-type'] || 'application/pdf');
+  res.setHeader(
+    'Content-Disposition',
+    headers?.['content-disposition'] || `${disposition}; filename="${fileName}"`,
+  );
+  if (headers?.['content-length']) {
+    res.setHeader('Content-Length', headers['content-length']);
+  }
+  if (headers?.['cache-control']) {
+    res.setHeader('Cache-Control', headers['cache-control']);
+  }
+}
+
+async function proxySignSecureFileResponse(res, upstreamRes, envelopeId, info = null, disposition = 'attachment') {
   const contentType = String(upstreamRes.headers?.['content-type'] || '');
 
   if (isJsonLikeContentType(contentType) || isTextLikeContentType(contentType)) {
@@ -83,18 +103,7 @@ async function proxySignSecureFileResponse(res, upstreamRes, envelopeId, info = 
       }
 
       const fallbackName = getFallbackDownloadFileName(envelopeId, downloadInfo);
-      res.status(200);
-      res.setHeader('Content-Type', fileRes.headers?.['content-type'] || 'application/pdf');
-      res.setHeader(
-        'Content-Disposition',
-        fileRes.headers?.['content-disposition'] || `attachment; filename="${fallbackName}"`,
-      );
-      if (fileRes.headers?.['content-length']) {
-        res.setHeader('Content-Length', fileRes.headers['content-length']);
-      }
-      if (fileRes.headers?.['cache-control']) {
-        res.setHeader('Cache-Control', fileRes.headers['cache-control']);
-      }
+      applyPdfHeaders(res, fileRes.headers, fallbackName, disposition);
       return fileRes.data.pipe(res);
     }
 
@@ -106,18 +115,7 @@ async function proxySignSecureFileResponse(res, upstreamRes, envelopeId, info = 
   }
 
   const fallbackName = getFallbackDownloadFileName(envelopeId, info);
-  res.status(200);
-  res.setHeader('Content-Type', contentType || 'application/pdf');
-  res.setHeader(
-    'Content-Disposition',
-    upstreamRes.headers?.['content-disposition'] || `attachment; filename="${fallbackName}"`,
-  );
-  if (upstreamRes.headers?.['content-length']) {
-    res.setHeader('Content-Length', upstreamRes.headers['content-length']);
-  }
-  if (upstreamRes.headers?.['cache-control']) {
-    res.setHeader('Cache-Control', upstreamRes.headers['cache-control']);
-  }
+  applyPdfHeaders(res, upstreamRes.headers, fallbackName, disposition);
 
   return upstreamRes.data.pipe(res);
 }
@@ -336,8 +334,16 @@ export async function downloadSignSecureAgreementFile(req, res, next) {
 
     const client = createSignSecureClient({ baseUrl: cfg.baseUrl, token: cfg.token });
     const downloadRes = await client.downloadEnvelopeFile(envelopeId);
+    const disposition = getRequestedDisposition(req);
+    const fallbackName = getFallbackDownloadFileName(envelopeId);
 
     if (downloadRes.status !== 200) {
+      const fallbackPdf = await client.tryDownloadSignedPdf(envelopeId);
+      if (fallbackPdf?.buffer?.length) {
+        applyPdfHeaders(res, { 'content-type': fallbackPdf.contentType }, fallbackName, disposition);
+        return res.send(fallbackPdf.buffer);
+      }
+
       const errText = await readStreamToString(downloadRes.data);
       return res.status(downloadRes.status >= 400 && downloadRes.status < 600 ? downloadRes.status : 502).json({
         success: false,
@@ -346,7 +352,7 @@ export async function downloadSignSecureAgreementFile(req, res, next) {
       });
     }
 
-    return proxySignSecureFileResponse(res, downloadRes, envelopeId);
+    return proxySignSecureFileResponse(res, downloadRes, envelopeId, null, disposition);
   } catch (error) {
     console.error('downloadSignSecureAgreementFile:', error);
     next(error);
