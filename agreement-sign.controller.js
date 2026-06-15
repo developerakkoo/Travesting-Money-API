@@ -47,6 +47,14 @@ function getFallbackDownloadFileName(envelopeId, info) {
   return String(rawName).replace(/[\\/:*?"<>|]/g, '_');
 }
 
+function sanitizeDispositionFileName(fileName) {
+  return String(fileName)
+    .replace(/[\r\n\t]/g, ' ')
+    .replace(/[^\x20-\x7E]/g, '_')
+    .replace(/[\\/:*?"<>|]/g, '_')
+    .trim() || 'agreement.pdf';
+}
+
 function getRequestedDisposition(req) {
   const value = String(req.query?.disposition || '').trim().toLowerCase();
   return value === 'inline' ? 'inline' : 'attachment';
@@ -55,10 +63,8 @@ function getRequestedDisposition(req) {
 function applyPdfHeaders(res, headers, fileName, disposition) {
   res.status(200);
   res.setHeader('Content-Type', headers?.['content-type'] || 'application/pdf');
-  res.setHeader(
-    'Content-Disposition',
-    headers?.['content-disposition'] || `${disposition}; filename="${fileName}"`,
-  );
+  const safeFileName = sanitizeDispositionFileName(fileName);
+  res.setHeader('Content-Disposition', `${disposition}; filename="${safeFileName}"`);
   if (headers?.['content-length']) {
     res.setHeader('Content-Length', headers['content-length']);
   }
